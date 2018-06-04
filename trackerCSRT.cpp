@@ -770,13 +770,13 @@ TrackerCSRT::Params::Params()
     use_rgb = false;
     window_function = "hann";
     //window_function = "gaussian";
-    kaiser_alpha = 3.72f;
+    kaiser_alpha = 3.75f;
     cheb_attenuation = 45;
     padding = 3.2f;
     template_size = 200;
     gsl_sigma = 1.0f;
     hog_orientations = 9;
-    hog_clip = 0.2f;
+    hog_clip = 0.15f;
     num_hog_channels_used = 18;
     filter_lr = 0.02f;	 
     weights_lr = 0.02f;
