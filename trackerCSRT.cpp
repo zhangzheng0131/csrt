@@ -521,15 +521,75 @@ bool TrackerCSRTImpl::updateImpl(const Mat& image_, Rect2d& boundingBox)
     }
     Mat resp = calculate_response(image, csr_filter);
     double max_valzz;
-    
-    
-	minMaxLoc(resp, NULL, &max_valzz, NULL , NULL);
+    	
+	
+     
+    Point max_loczz;
+    //minMaxLoc(resp, NULL, NULL, NULL, &max_loc);
+	minMaxLoc(resp, NULL, &max_valzz, NULL , &max_loczz);
         // normalize response
+//float col = ((float) max_loc.x) 
         Scalar mean,std;
         meanStdDev(resp, mean, std);
-        double PSR;
-        double epszz=0.00001;
+        double PSR=1000.0;
+        double epszz=0.00001;  
+        double temp1=0.01;
+
+ /*float col = ((float) max_loc.x) + subpixel_peak(resp, "horizontal", max_loc);
+    float row = ((float) max_loc.y) + subpixel_peak(resp, "vertical", max_loc);
+    if(row + 1 > (float)resp.rows / 2.0f) {
+        row = row - resp.rows;
+    }
+    if(col + 1 > (float)resp.cols / 2.0f) {
+        col = col - resp.cols;
+    }*/
+ 	Mat resp1=Mat::zeros(resp.rows, resp.cols, CV_32FC2);
+
+	for(int i=0;i<resp.rows;i++)
+	{
+		for(int j=0;j<resp.cols;j++)
+		{
+			if(i+1<resp.rows/2.0f&& j+1<resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i+int(resp.rows/2),j+int(resp.cols/2));
+			}
+			if(i+1<resp.rows/2.0f&& j+1>=resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i+int(resp.rows/2),j-int(resp.cols/2));
+			}
+if(i+1>=resp.rows/2.0f&& j+1<resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i-int(resp.rows/2),j+int(resp.cols/2));
+			}
+			if(i+1>=resp.rows/2.0f&& j+1>=resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i-int(resp.rows/2),j-int(resp.cols/2));
+			}
+			
+		}
+	}
+
+
+
+
+	//float * ptr1=(float *)(resp.data);
+	for(int i=0;i<resp1.rows;i++)
+	{
+		for(int j=0;j<resp1.cols;j++)
+		{
+			if(!((i==max_loczz.y)&&(j==max_loczz.x))){
+				//temp1=((double)(max_valzz-ptr1[0]))/(1-exp(-(4/sqrt((bounding_box.width*bounding_box.height))*((i-max_loczz.y)*(i-max_loczz.y)+(j-max_loczz.x)*(j-max_loczz.x)))));
+temp1=((double)(max_valzz-resp1.at<float>(i,j)))/(1-exp(-(4/sqrt((bounding_box.width*bounding_box.height))*((i-max_loczz.y)*(i-max_loczz.y)+(j-max_loczz.x)*(j-max_loczz.x)))));
+				if(temp1<PSR){ PSR=temp1;}
+			}
+		//ptr1++;	
+		}
+		
+	}
+if(abs(PSR)<0.000001)
+{
         PSR = (max_valzz-mean[0]) / (std[0]+epszz); // PSR
+}
         double qSTt;
         
         //double temp;
@@ -564,7 +624,8 @@ bool TrackerCSRTImpl::updateImpl(const Mat& image_, Rect2d& boundingBox)
 	}
         //
         //double meanpsrzz=sum/meanpsr.size();
-        double PSRtemp=meanpsrzz[0]/(PSR*max_valzz);
+        //double PSRtemp=meanpsrzz[0]/(PSR*max_valzz);
+double PSRtemp=(PSR*max_valzz)/meanpsrzz[0];
         if(PSRtemp>=Tq && frame!=2) //by zhangzheng 2018.5.28
     	{
         	meanpsr.pop_back();
@@ -731,7 +792,7 @@ bool TrackerCSRTImpl::initImpl(const Mat& image_, const Rect2d& boundingBox)
     hST0=csr_filter;
     Deltat=0;
     Beltat=std::exp((-alphaD)*(double(Deltat)));
-    Tq=2.9;
+    Tq=19.75;
     frame=1;
 //   
     if(params.use_channel_weights) {
@@ -767,6 +828,7 @@ TrackerCSRT::Params::Params()
     use_hog = true;
     use_color_names = true;
     use_gray = true;
+    
     use_rgb = false;
     window_function = "hann";
     //window_function = "gaussian";
