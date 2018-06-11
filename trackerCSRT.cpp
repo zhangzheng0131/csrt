@@ -32,18 +32,20 @@ public:
     TrackerCSRTImpl(const TrackerCSRT::Params &parameters = TrackerCSRT::Params());
     void read(const FileNode& fn);
     void write(FileStorage& fs) const;
-
+    
 protected:
     TrackerCSRT::Params params;
 
     bool initImpl(const Mat& image, const Rect2d& boundingBox);
     virtual void setInitialMask(const Mat mask);
     bool updateImpl(const Mat& image, Rect2d& boundingBox);
+    double PSRcompute(const Mat &resp,double max_valzz,Point &max_loczz,Rect2f &bounding_box);
     void update_csr_filter(const Mat &image, const Mat &my_mask);
     void update_histograms(const Mat &image, const Rect &region);
     void extract_histograms(const Mat &image, cv::Rect region, Histogram &hf, Histogram &hb);
     std::vector<Mat> create_csr_filter(const std::vector<cv::Mat>
             img_features, const cv::Mat Y, const cv::Mat P);
+    //std::vector<Mat> calculate_response(const Mat &image, const std::vector<Mat> filter);
     Mat calculate_response(const Mat &image, const std::vector<Mat> filter);
     Mat get_location_prior(const Rect roi, const Size2f target_size, const Size img_sz);
     Mat segment_region(const Mat &image, const Point2f &object_center,
@@ -63,6 +65,8 @@ private:
     std::vector<Mat> detector;
     int Nq;
     double Tq;
+    float Kai;
+    float biaszz;
     double alphaD;
     double lamda;
     int Deltat;
@@ -131,15 +135,31 @@ bool TrackerCSRTImpl::check_mask_area(const Mat &mat, const double obj_area)
     return true;
 }
 
+//std::vector<Mat> TrackerCSRTImpl::calculate_response(const Mat &image, const std::vector<Mat> filter)
 Mat TrackerCSRTImpl::calculate_response(const Mat &image, const std::vector<Mat> filter)
 {
-    Mat patch = get_subwindow(image, object_center, cvFloor(current_scale_factor * template_size.width),
-        cvFloor(current_scale_factor * template_size.height));
+    std::vector<Mat>  reszz;
+    //vector<Mat> patch;
+    double scalezz[3];
+    //scalezz[0]=0.9604;
+    //scalezz[1]=0.98;
+    //scalezz[2]=1.0;
+    //scalezz[3]=1.02 ;
+    //scalezz[4]=1.04;
+    scalezz[0]=0.98;
+    scalezz[1]=1.0;
+    scalezz[2]=1.02;
+    //for(int izz=0;izz<3;izz++){
+    //for(int jzz=0;jzz<3;jzz++){
+    Mat patch = get_subwindow(image, object_center, cvFloor(current_scale_factor * template_size.width),cvFloor(current_scale_factor * template_size.height));
     resize(patch, patch, rescaled_template_size, 0, 0, INTER_CUBIC);
+    //patch.push_back(patchtemp);
+
 
     std::vector<Mat> ftrs = get_features(patch, yf.size());
     std::vector<Mat> Ffeatures = fourier_transform_features(ftrs);
-    Mat resp, res;
+    Mat resp,res;
+
     if(params.use_channel_weights){
         res = Mat::zeros(Ffeatures[0].size(), CV_32FC2);
         Mat resp_ch;
@@ -149,6 +169,7 @@ Mat TrackerCSRTImpl::calculate_response(const Mat &image, const std::vector<Mat>
             res += (resp_ch * filter_weights[i]);
         }
         idft(res, res, DFT_SCALE | DFT_REAL_OUTPUT);
+	//reszz.push_back(res);
     } else {
         res = Mat::zeros(Ffeatures[0].size(), CV_32FC2);
         Mat resp_ch;
@@ -157,8 +178,12 @@ Mat TrackerCSRTImpl::calculate_response(const Mat &image, const std::vector<Mat>
             res = res + resp_ch;
         }
         idft(res, res, DFT_SCALE | DFT_REAL_OUTPUT);
+        //reszz.push_back(res);
     }
-    return res;
+   //}
+//}
+//return reszz;
+   return res;
 }
 
 void TrackerCSRTImpl::update_csr_filter(const Mat &image, const Mat &mask)
@@ -222,12 +247,19 @@ std::vector<Mat> TrackerCSRTImpl::get_features(const Mat &patch, const Size2i &f
         resize(gray_m, gray_m, feature_size, 0, 0, INTER_CUBIC);
         gray_m.convertTo(gray_m, CV_32FC1, 1.0/255.0, -0.5);
         features.push_back(gray_m);
+        //Mat hsv_img = bgr2hsv(patch);
+        //resize(hsv_img, hsv_img, feature_size, 0, 0, INTER_CUBIC);
+        //gray_m.convertTo(hsv_img, CV_32FC1, 1.0/255.0, -0.5);
+        //features.push_back(hsv_img);
     }
     if(params.use_rgb) {
         std::vector<Mat> rgb_features = get_features_rgb(patch, feature_size);
         features.insert(features.end(), rgb_features.begin(), rgb_features.end());
     }
-
+    /*if(params.use_hsv) {
+         Mat hsv_img = bgr2hsv(patch);
+         features.push_back(hsv_img);
+    }*/
     for (size_t i = 0; i < features.size(); ++i) {
         features.at(i) = features.at(i).mul(window);
     }
@@ -444,8 +476,9 @@ void TrackerCSRTImpl::update_histograms(const Mat &image, const Rect &region)
 Point2f TrackerCSRTImpl::estimate_new_position(const Mat &image)
 {
 
-    Mat resp = calculate_response(image, csr_filter);
-
+    //std::vector<Mat> respzz = calculate_response(image, csr_filter);
+    //Mat resp=respzz[4];
+    Mat resp=calculate_response(image, csr_filter);
     Point max_loc;
     minMaxLoc(resp, NULL, NULL, NULL, &max_loc);
     // take into account also subpixel accuracy
@@ -476,8 +509,9 @@ Point2f TrackerCSRTImpl::estimate_new_position(const Mat &image)
 Point2f TrackerCSRTImpl::estimate_new_position_detector(const Mat &image)
 {
 
+    //std::vector<Mat> respzz = calculate_response(image,detector);
+    //Mat resp=respzz[4];
     Mat resp = calculate_response(image,detector);
-
     Point max_loc;
     minMaxLoc(resp, NULL, NULL, NULL, &max_loc);
     // take into account also subpixel accuracy
@@ -519,16 +553,45 @@ bool TrackerCSRTImpl::updateImpl(const Mat& image_, Rect2d& boundingBox)
     } else {
         image = image_;
     }
+    //std::vector<Mat> respzz = calculate_response(image, csr_filter);
     Mat resp = calculate_response(image, csr_filter);
     double max_valzz;
     	
 	
-     
+    double scalezz[3];
+   /* scalezz[0]=0.9604;
+    scalezz[1]=0.98;
+    scalezz[2]=1.0;
+    scalezz[3]=1.02 ;
+    scalezz[4]=1.04;*/
+    scalezz[0]=0.98;
+    scalezz[1]=1.0;
+    scalezz[2]=1.02 ;
     Point max_loczz;
-    //minMaxLoc(resp, NULL, NULL, NULL, &max_loc);
-	minMaxLoc(resp, NULL, &max_valzz, NULL , &max_loczz);
+    minMaxLoc(resp, NULL, &max_valzz, NULL, &max_loczz);
+/*   int izzfinal=2, jzzfinal=2;
+   double maxfinal;
+   Point max_final;
+   double maxtemp=0.0;
+   for(int izz=0;izz<3; izz++)
+   {
+	for(int jzz=0;jzz< 3; jzz++)
+	{
+	     int tempzz=jzz+izz*3;
+     
+		minMaxLoc(respzz[tempzz], NULL, &max_valzz, NULL , &max_final);
+        if(max_valzz>maxtemp)
+	{
+		max_valzz=maxtemp;
+                izzfinal=izz;
+   		jzzfinal=jzz;
+                max_loczz=max_final;
+	}
         // normalize response
 //float col = ((float) max_loc.x) 
+}}
+        Mat resp;
+        resp.push_back(respzz[jzzfinal+izzfinal*3]);*/
         Scalar mean,std;
         meanStdDev(resp, mean, std);
         double PSR=1000.0;
@@ -579,25 +642,24 @@ if(i+1>=resp.rows/2.0f&& j+1<resp.cols/2.0f)
 		{
 			if(!((i==max_loczz.y)&&(j==max_loczz.x))){
 				//temp1=((double)(max_valzz-ptr1[0]))/(1-exp(-(4/sqrt((bounding_box.width*bounding_box.height))*((i-max_loczz.y)*(i-max_loczz.y)+(j-max_loczz.x)*(j-max_loczz.x)))));
-temp1=((double)(max_valzz-resp1.at<float>(i,j)))/(1-exp(-(4/sqrt((bounding_box.width*bounding_box.height))*((i-max_loczz.y)*(i-max_loczz.y)+(j-max_loczz.x)*(j-max_loczz.x)))));
+temp1=(exp(biaszz+(double)(max_valzz-resp1.at<float>(i,j))))/(1-exp(-(Kai/sqrt((bounding_box.width*bounding_box.height))*((i-max_loczz.y)*(i-max_loczz.y)+(j-max_loczz.x)*(j-max_loczz.x)))));
 				if(temp1<PSR){ PSR=temp1;}
 			}
 		//ptr1++;	
 		}
 		
 	}
-if(abs(PSR)<0.000001)
-{
-        PSR = (max_valzz-mean[0]) / (std[0]+epszz); // PSR
-}
+	if(abs(PSR)<0.000001)
+        {
+        	PSR = (max_valzz-mean[0]) / (std[0]+epszz); // PSR
+	}
         double qSTt;
         
         //double temp;
         //temp=PSR*max_valzz;
         qSTt = PSR*max_valzz;
 	frame++;
-	
-		meanpsr.push_back(qSTt);
+	meanpsr.push_back(qSTt);
 	
 	//else if(PSRtemp<Tq) //by zhangzheng 2018.5.28
     	
@@ -625,18 +687,20 @@ if(abs(PSR)<0.000001)
         //
         //double meanpsrzz=sum/meanpsr.size();
         //double PSRtemp=meanpsrzz[0]/(PSR*max_valzz);
-double PSRtemp=(PSR*max_valzz)/meanpsrzz[0];
+        double PSRtemp=(PSR*max_valzz)/meanpsrzz[0];
         if(PSRtemp>=Tq && frame!=2) //by zhangzheng 2018.5.28
     	{
         	meanpsr.pop_back();
 	}
 	//PSRtemp=meanpsrzz/(PSR*max_valzz);
     object_center = estimate_new_position(image);
-
+    
     current_scale_factor = dsst.getScale(image, object_center);
     //update bouding_box according to new scale and location
     bounding_box.x = object_center.x - current_scale_factor * original_target_size.width / 2.0f;
     bounding_box.y = object_center.y - current_scale_factor * original_target_size.height / 2.0f;
+  //  bounding_box.width = current_scale_factor * original_target_size.width;
+  //  bounding_box.height = current_scale_factor * original_target_size.height*scalezz[izzfinal];
     bounding_box.width = current_scale_factor * original_target_size.width;
     bounding_box.height = current_scale_factor * original_target_size.height;
 
@@ -669,14 +733,18 @@ double PSRtemp=(PSR*max_valzz)/meanpsrzz[0];
              detector[i] = (1.0f - Beltat)*hST0[i] + Beltat * csr_filter[i];
          }
         //Detector = (1-Beltat).*hST0+Beltat.*csr_filter;
-        resp = calculate_response(image, detector);
-	meanStdDev(resp, mean, std);
+        //std::vector<Mat> resp = calculate_response(image, detector);
+	Mat resp = calculate_response(image, detector);
+	//meanStdDev(resp, mean, std); 
+        minMaxLoc(resp, NULL, &max_valzz, NULL, &max_loczz);
+        PSR=PSRcompute(resp,max_valzz, max_loczz,bounding_box);
        
-        PSR = (max_valzz-mean[0]) / (std[0]+epszz); // PSR
+        //PSR = (max_valzz-mean[0]) / (std[0]+epszz); // PSR
         //double temp;
         //temp=PSR*max_valzz;
 
-        if(PSR*max_valzz<=qSTt)
+        //if(PSR*max_valzz<=qSTt)
+   	if(PSR*max_valzz<=meanpsrzz[0])
 	{
 		
 	}
@@ -688,6 +756,50 @@ double PSRtemp=(PSR*max_valzz)/meanpsrzz[0];
     dsst.update(image, object_center);
     boundingBox = bounding_box;
     return true;
+}
+double TrackerCSRTImpl::PSRcompute(const Mat &resp,double max_valzz,Point &max_loczz, Rect2f &bounding_box)
+{
+	Mat resp1=Mat::zeros(resp.rows, resp.cols, CV_32FC2);
+
+	for(int i=0;i<resp.rows;i++)
+	{
+		for(int j=0;j<resp.cols;j++)
+		{
+			if(i+1<resp.rows/2.0f&& j+1<resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i+int(resp.rows/2),j+int(resp.cols/2));
+			}
+			if(i+1<resp.rows/2.0f&& j+1>=resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i+int(resp.rows/2),j-int(resp.cols/2));
+			}
+			if(i+1>=resp.rows/2.0f&& j+1<resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i-int(resp.rows/2),j+int(resp.cols/2));
+			}
+			if(i+1>=resp.rows/2.0f&& j+1>=resp.cols/2.0f)
+			{
+				resp1.at<float>(i,j)=resp.at<float>(i-int(resp.rows/2),j-int(resp.cols/2));
+			}
+			
+		}
+	}
+	//float * ptr1=(float *)(resp.data);
+	double temp1=0.0,PSR=10000.0;
+	
+	for(int i=0;i<resp1.rows;i++)
+	{
+		for(int j=0;j<resp1.cols;j++)
+		{
+			if(!((i==max_loczz.y)&&(j==max_loczz.x))){
+temp1=(exp(biaszz+(double)(max_valzz-resp1.at<float>(i,j))))/(1-exp(-(Kai/sqrt((bounding_box.width*bounding_box.height))*((i-max_loczz.y)*(i-max_loczz.y)+(j-max_loczz.x)*(j-max_loczz.x)))));
+				if(temp1<PSR){ PSR=temp1;}
+			}
+		//ptr1++;	
+		}
+		
+	}
+	return PSR;
 }
 
 // *********************************************************************
@@ -787,14 +899,20 @@ bool TrackerCSRTImpl::initImpl(const Mat& image_, const Rect2d& boundingBox)
     std::vector<Mat> patch_ftrs = get_features(patch, yf.size());
     std::vector<Mat> Fftrs = fourier_transform_features(patch_ftrs);
     csr_filter = create_csr_filter(Fftrs, yf, filter_mask);
-//
+
     detector= csr_filter; //zhangzehng in 2018.5.28
     hST0=csr_filter;
     Deltat=0;
     Beltat=std::exp((-alphaD)*(double(Deltat)));
-    Tq=19.75;
+  
+    //  Tq=15;
+    Tq=3.006125;
+    
+    //Tq2=2.9;
+    Kai=11.01;
+    biaszz=0.3625;
     frame=1;
-//   
+   
     if(params.use_channel_weights) {
         Mat current_resp;
         filter_weights = std::vector<float>(csr_filter.size());
@@ -828,11 +946,14 @@ TrackerCSRT::Params::Params()
     use_hog = true;
     use_color_names = true;
     use_gray = true;
-    
+    //use_color_names = false;
+    //use_gray = true;
     use_rgb = false;
+   //use_hsv = true;
     window_function = "hann";
     //window_function = "gaussian";
-    kaiser_alpha = 3.75f;
+    kaiser_alpha = 3.72f;
+  
     cheb_attenuation = 45;
     padding = 3.2f;
     template_size = 200; 
@@ -878,6 +999,8 @@ void TrackerCSRT::Params::read(const FileNode& fn)
         fn["use_gray"] >> use_gray;
     if(!fn["use_rgb"].empty())
         fn["use_rgb"] >> use_rgb;
+    //if(!fn["use_hsv"].empty())
+    //    fn["use_hsv"] >> use_hsv;
     if(!fn["window_function"].empty())
         fn["window_function"] >> window_function;
     if(!fn["kaiser_alpha"].empty())
@@ -925,6 +1048,7 @@ void TrackerCSRT::Params::write(FileStorage& fs) const
     fs << "use_color_names" << use_color_names;
     fs << "use_gray" << use_gray;
     fs << "use_rgb" << use_rgb;
+    //fs << "use_hsv" << use_hsv;
     fs << "window_function" << window_function;
     fs << "kaiser_alpha" << kaiser_alpha;
     fs << "cheb_attenuation" << cheb_attenuation;
