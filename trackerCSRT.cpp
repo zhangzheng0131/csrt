@@ -907,8 +907,6 @@ bool TrackerCSRTImpl::initImpl(const Mat& image_, const Rect2d& boundingBox)
   
     //  Tq=15;
     Tq=3.006125;
-    
-    //Tq2=2.9;
     Kai=11.01;
     biaszz=0.3625;
     frame=1;
